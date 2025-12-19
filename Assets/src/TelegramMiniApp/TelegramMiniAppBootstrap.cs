@@ -25,7 +25,6 @@ namespace TelegramMiniApp
         private bool _apiRequestInFlight;
 
         private const string ApiBaseUrl = "https://194.147.90.24";
-        private const bool RedactUserDataInUi = true;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Create()
@@ -154,23 +153,28 @@ namespace TelegramMiniApp
                     yield break;
                 }
 
-                _lastRequestBody = BuildDisplayRequestJson(registerRequest);
+                _lastRequestBody = JsonUtility.ToJson(registerRequest, true);
                 _lastResponseBody = "Waiting for response...";
                 _statusLine = "Register: sending...";
                 RefreshDisplay();
                 TelegramAuthRegisterResponse registerResponse = null;
+                string registerResponseRaw = null;
                 ApiError registerError = null;
-                yield return client.Register(registerRequest, r => registerResponse = r, e => registerError = e);
+                yield return client.Register(registerRequest, (r, raw) =>
+                {
+                    registerResponse = r;
+                    registerResponseRaw = raw;
+                }, e => registerError = e);
                 if (registerError != null)
                 {
-                    _lastResponseBody = FormatResponseBody(registerError.rawBody, registerError.ToSummary());
+                    _lastResponseBody = FormatErrorBody(registerError);
                     _statusLine = "Register: error.";
                     RefreshDisplay();
                     _apiRequestInFlight = false;
                     yield break;
                 }
 
-                _lastResponseBody = BuildDisplayResponseJson(registerResponse);
+                _lastResponseBody = FormatSuccessBody(registerResponseRaw, registerResponse);
                 _statusLine = "Register: ok.";
                 RefreshDisplay();
                 _apiRequestInFlight = false;
@@ -188,139 +192,69 @@ namespace TelegramMiniApp
                 yield break;
             }
 
-            _lastRequestBody = BuildDisplayRequestJson(loginRequest);
+            _lastRequestBody = JsonUtility.ToJson(loginRequest, true);
             _lastResponseBody = "Waiting for response...";
             _statusLine = "Login: sending...";
             RefreshDisplay();
             TelegramAuthLoginResponse loginResponse = null;
+            string loginResponseRaw = null;
             ApiError loginError = null;
-            yield return client.Login(loginRequest, r => loginResponse = r, e => loginError = e);
+            yield return client.Login(loginRequest, (r, raw) =>
+            {
+                loginResponse = r;
+                loginResponseRaw = raw;
+            }, e => loginError = e);
             if (loginError != null)
             {
-                _lastResponseBody = FormatResponseBody(loginError.rawBody, loginError.ToSummary());
+                _lastResponseBody = FormatErrorBody(loginError);
                 _statusLine = "Login: error.";
                 RefreshDisplay();
                 _apiRequestInFlight = false;
                 yield break;
             }
 
-            _lastResponseBody = BuildDisplayResponseJson(loginResponse);
+            _lastResponseBody = FormatSuccessBody(loginResponseRaw, loginResponse);
             _statusLine = "Login: ok.";
             RefreshDisplay();
             _apiRequestInFlight = false;
         }
 
-        private static string BuildDisplayRequestJson(TelegramAuthRegisterRequest request)
+        private static string FormatSuccessBody(string rawBody, object parsed)
         {
-            if (!RedactUserDataInUi)
-                return JsonUtility.ToJson(request, true);
-
-            var redacted = new TelegramAuthRegisterRequest
+            if (!string.IsNullOrWhiteSpace(rawBody))
             {
-                telegramSessionDto = RedactSession(request?.telegramSessionDto),
-                connectionData = request?.connectionData
-            };
+                var trimmed = rawBody.Trim();
+                if (trimmed.StartsWith("{") || trimmed.StartsWith("["))
+                    return PrettyPrintJson(trimmed);
 
-            return JsonUtility.ToJson(redacted, true);
+                return rawBody;
+            }
+
+            if (parsed == null)
+                return "<empty>";
+
+            return JsonUtility.ToJson(parsed, true);
         }
 
-        private static string BuildDisplayRequestJson(TelegramAuthLoginRequest request)
+        private static string FormatErrorBody(ApiError error)
         {
-            if (!RedactUserDataInUi)
-                return JsonUtility.ToJson(request, true);
+            if (error == null)
+                return "<empty>";
 
-            var redacted = new TelegramAuthLoginRequest
+            if (!string.IsNullOrWhiteSpace(error.rawBody))
             {
-                telegramSessionDto = RedactSession(request?.telegramSessionDto),
-                connectionData = request?.connectionData
-            };
+                var trimmed = error.rawBody.Trim();
+                if (trimmed.StartsWith("{") || trimmed.StartsWith("["))
+                    return PrettyPrintJson(trimmed);
 
-            return JsonUtility.ToJson(redacted, true);
-        }
+                return error.rawBody;
+            }
 
-        private static string BuildDisplayResponseJson(TelegramAuthRegisterResponse response)
-        {
-            if (!RedactUserDataInUi)
-                return JsonUtility.ToJson(response, true);
+            var status = error.statusCode > 0 ? $"HTTP {error.statusCode}" : "HTTP error";
+            if (!string.IsNullOrWhiteSpace(error.networkError))
+                status += $": {error.networkError}";
 
-            var redacted = new TelegramAuthRegisterResponse
-            {
-                user = RedactUser(response?.user)
-            };
-
-            return JsonUtility.ToJson(redacted, true);
-        }
-
-        private static string BuildDisplayResponseJson(TelegramAuthLoginResponse response)
-        {
-            if (!RedactUserDataInUi)
-                return JsonUtility.ToJson(response, true);
-
-            var redacted = new TelegramAuthLoginResponse
-            {
-                accessToken = "<hidden>",
-                sessionId = "<hidden>",
-                expiresAt = "<hidden>",
-                tokenExpiresAt = "<hidden>",
-                user = RedactUser(response?.user)
-            };
-
-            return JsonUtility.ToJson(redacted, true);
-        }
-
-        private static TelegramSessionDto RedactSession(TelegramSessionDto session)
-        {
-            if (session == null)
-                return null;
-
-            return new TelegramSessionDto
-            {
-                id = 0,
-                firstName = "<hidden>",
-                lastName = "<hidden>",
-                username = "<hidden>",
-                photoUrl = "<hidden>",
-                authDate = 0,
-                hash = "<hidden>"
-            };
-        }
-
-        private static UserDto RedactUser(UserDto user)
-        {
-            if (user == null)
-                return null;
-
-            return new UserDto
-            {
-                displayName = "<hidden>",
-                avatarId = 0,
-                player = RedactPlayer(user.player)
-            };
-        }
-
-        private static PlayerDto RedactPlayer(PlayerDto player)
-        {
-            if (player == null)
-                return null;
-
-            return new PlayerDto
-            {
-                id = 0,
-                money = 0,
-                rating = 0
-            };
-        }
-
-        private static string FormatResponseBody(string rawBody, string fallback)
-        {
-            if (string.IsNullOrWhiteSpace(rawBody))
-                return string.IsNullOrWhiteSpace(fallback) ? "<empty>" : fallback;
-
-            var trimmed = rawBody.Trim();
-            if (trimmed.StartsWith("{") || trimmed.StartsWith("["))
-                return PrettyPrintJson(trimmed);
-
-            return rawBody;
+            return status;
         }
 
         private static string PrettyPrintJson(string json)

@@ -15,17 +15,17 @@ namespace TelegramMiniApp.Api
             _baseUrl = (baseUrl ?? string.Empty).Trim().TrimEnd('/');
         }
 
-        public IEnumerator Register(TelegramAuthRegisterRequest request, Action<TelegramAuthRegisterResponse> onSuccess, Action<ApiError> onError)
+        public IEnumerator Register(TelegramAuthRegisterRequest request, Action<TelegramAuthRegisterResponse, string> onSuccess, Action<ApiError> onError)
         {
             return Post("/api/v1/telegram_auth/register", request, onSuccess, onError);
         }
 
-        public IEnumerator Login(TelegramAuthLoginRequest request, Action<TelegramAuthLoginResponse> onSuccess, Action<ApiError> onError)
+        public IEnumerator Login(TelegramAuthLoginRequest request, Action<TelegramAuthLoginResponse, string> onSuccess, Action<ApiError> onError)
         {
             return Post("/api/v1/telegram_auth/login", request, onSuccess, onError);
         }
 
-        private IEnumerator Post<TResponse>(string path, object body, Action<TResponse> onSuccess, Action<ApiError> onError)
+        private IEnumerator Post<TResponse>(string path, object body, Action<TResponse, string> onSuccess, Action<ApiError> onError)
         {
             var url = $"{_baseUrl}{path}";
             var json = JsonUtility.ToJson(body);
@@ -45,7 +45,7 @@ namespace TelegramMiniApp.Api
                     var response = string.IsNullOrWhiteSpace(responseText)
                         ? default
                         : JsonUtility.FromJson<TResponse>(responseText);
-                    onSuccess?.Invoke(response);
+                    onSuccess?.Invoke(response, responseText);
                     yield break;
                 }
 
