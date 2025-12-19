@@ -25,6 +25,7 @@ namespace TelegramMiniApp
         private bool _apiRequestInFlight;
 
         private const string ApiBaseUrl = "https://194.147.90.24";
+        private const bool RedactUserDataInUi = true;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Create()
@@ -153,7 +154,7 @@ namespace TelegramMiniApp
                     yield break;
                 }
 
-                _lastRequestBody = JsonUtility.ToJson(registerRequest, true);
+                _lastRequestBody = BuildDisplayRequestJson(registerRequest);
                 _lastResponseBody = "Waiting for response...";
                 _statusLine = "Register: sending...";
                 RefreshDisplay();
@@ -169,7 +170,7 @@ namespace TelegramMiniApp
                     yield break;
                 }
 
-                _lastResponseBody = JsonUtility.ToJson(registerResponse, true);
+                _lastResponseBody = BuildDisplayResponseJson(registerResponse);
                 _statusLine = "Register: ok.";
                 RefreshDisplay();
                 _apiRequestInFlight = false;
@@ -187,7 +188,7 @@ namespace TelegramMiniApp
                 yield break;
             }
 
-            _lastRequestBody = JsonUtility.ToJson(loginRequest, true);
+            _lastRequestBody = BuildDisplayRequestJson(loginRequest);
             _lastResponseBody = "Waiting for response...";
             _statusLine = "Login: sending...";
             RefreshDisplay();
@@ -203,10 +204,111 @@ namespace TelegramMiniApp
                 yield break;
             }
 
-            _lastResponseBody = JsonUtility.ToJson(loginResponse, true);
+            _lastResponseBody = BuildDisplayResponseJson(loginResponse);
             _statusLine = "Login: ok.";
             RefreshDisplay();
             _apiRequestInFlight = false;
+        }
+
+        private static string BuildDisplayRequestJson(TelegramAuthRegisterRequest request)
+        {
+            if (!RedactUserDataInUi)
+                return JsonUtility.ToJson(request, true);
+
+            var redacted = new TelegramAuthRegisterRequest
+            {
+                telegramSessionDto = RedactSession(request?.telegramSessionDto),
+                connectionData = request?.connectionData
+            };
+
+            return JsonUtility.ToJson(redacted, true);
+        }
+
+        private static string BuildDisplayRequestJson(TelegramAuthLoginRequest request)
+        {
+            if (!RedactUserDataInUi)
+                return JsonUtility.ToJson(request, true);
+
+            var redacted = new TelegramAuthLoginRequest
+            {
+                telegramSessionDto = RedactSession(request?.telegramSessionDto),
+                connectionData = request?.connectionData
+            };
+
+            return JsonUtility.ToJson(redacted, true);
+        }
+
+        private static string BuildDisplayResponseJson(TelegramAuthRegisterResponse response)
+        {
+            if (!RedactUserDataInUi)
+                return JsonUtility.ToJson(response, true);
+
+            var redacted = new TelegramAuthRegisterResponse
+            {
+                user = RedactUser(response?.user)
+            };
+
+            return JsonUtility.ToJson(redacted, true);
+        }
+
+        private static string BuildDisplayResponseJson(TelegramAuthLoginResponse response)
+        {
+            if (!RedactUserDataInUi)
+                return JsonUtility.ToJson(response, true);
+
+            var redacted = new TelegramAuthLoginResponse
+            {
+                accessToken = "<hidden>",
+                sessionId = "<hidden>",
+                expiresAt = "<hidden>",
+                tokenExpiresAt = "<hidden>",
+                user = RedactUser(response?.user)
+            };
+
+            return JsonUtility.ToJson(redacted, true);
+        }
+
+        private static TelegramSessionDto RedactSession(TelegramSessionDto session)
+        {
+            if (session == null)
+                return null;
+
+            return new TelegramSessionDto
+            {
+                id = 0,
+                firstName = "<hidden>",
+                lastName = "<hidden>",
+                username = "<hidden>",
+                photoUrl = "<hidden>",
+                authDate = 0,
+                hash = "<hidden>"
+            };
+        }
+
+        private static UserDto RedactUser(UserDto user)
+        {
+            if (user == null)
+                return null;
+
+            return new UserDto
+            {
+                displayName = "<hidden>",
+                avatarId = 0,
+                player = RedactPlayer(user.player)
+            };
+        }
+
+        private static PlayerDto RedactPlayer(PlayerDto player)
+        {
+            if (player == null)
+                return null;
+
+            return new PlayerDto
+            {
+                id = 0,
+                money = 0,
+                rating = 0
+            };
         }
 
         private static string FormatResponseBody(string rawBody, string fallback)
