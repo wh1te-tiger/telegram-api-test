@@ -191,8 +191,7 @@ namespace TelegramMiniApp
                 yield break;
             }
 
-            var loginRequest = TelegramAuthRequestBuilder.BuildLoginRequest(_userDataJson, _userAgent);
-            if (loginRequest == null)
+            if (!TelegramAuthRequestBuilder.TryBuildLoginRequest(_userDataJson, _userAgent, out var loginRequest))
             {
                 _lastRequestBody = "<failed to build>";
                 _lastResponseBody = "Login: failed to build request.";
