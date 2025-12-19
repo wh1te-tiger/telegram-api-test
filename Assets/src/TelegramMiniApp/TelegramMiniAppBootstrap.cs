@@ -16,10 +16,10 @@ namespace TelegramMiniApp
         private TelegramMiniAppBridge _bridge;
         private float _timeSinceStart;
         private bool _received;
-        private string _userAgent;
         private string _userDataJson;
-        private string _baseInfo;
-        private string _apiStatus;
+        private string _statusLine;
+        private string _lastRequestBody;
+        private string _lastResponseBody;
         private Button _registerButton;
         private Button _loginButton;
         private bool _apiRequestInFlight;
@@ -42,25 +42,19 @@ namespace TelegramMiniApp
         {
             _bridge = new GameObject(TelegramWebApp.BridgeGameObjectName).AddComponent<TelegramMiniAppBridge>();
             _bridge.UserDataJsonReceived += HandleUserDataJson;
-            _bridge.UserAgentReceived += HandleUserAgent;
 
             EnsureEventSystem();
             _text = CreateOverlayText();
-            _text.text =
-                "Telegram Mini App (Unity WebGL)\n" +
-                "Waiting for Telegram.WebApp...\n\n" +
-                "If you run this in a normal browser, user data will be empty.\n";
+            _statusLine = "Waiting for Telegram.WebApp...";
+            RefreshDisplay();
 
             TelegramWebApp.RequestUserDataJson();
-            TelegramWebApp.RequestUserAgent();
         }
 
         private void OnDestroy()
         {
             if (_bridge != null)
                 _bridge.UserDataJsonReceived -= HandleUserDataJson;
-            if (_bridge != null)
-                _bridge.UserAgentReceived -= HandleUserAgent;
         }
 
         private void Update()
@@ -72,57 +66,34 @@ namespace TelegramMiniApp
             if (_timeSinceStart < 2.0f)
                 return;
 
-            _text.text =
-                "Telegram Mini App (Unity WebGL)\n" +
-                "No response from Telegram.WebApp yet.\n\n" +
-                "Open this build inside Telegram using a bot Web App button.\n";
+            _statusLine =
+                "No response from Telegram.WebApp yet.\n" +
+                "Open this build inside Telegram using a bot Web App button.";
             _received = true;
+            RefreshDisplay();
         }
 
         private void HandleUserDataJson(string json)
         {
             _received = true;
             _userDataJson = json ?? "";
-            RenderConfirmedInfo();
-        }
-
-        private void HandleUserAgent(string userAgent)
-        {
-            _received = true;
-            _userAgent = userAgent ?? "";
-            RenderConfirmedInfo();
-        }
-
-        private void RenderConfirmedInfo()
-        {
-            var ua = string.IsNullOrWhiteSpace(_userAgent) ? "<empty>" : _userAgent;
-            var json = string.IsNullOrWhiteSpace(_userDataJson) ? "<empty>" : PrettyPrintJson(_userDataJson);
-
-            _baseInfo =
-                "Telegram Mini App (Unity WebGL)\n\n" +
-                "User-Agent:\n" +
-                ua + "\n\n" +
-                "Telegram.WebApp payload:\n" +
-                json;
-
+            _statusLine = "Telegram.WebApp ready.";
             RefreshDisplay();
         }
 
         private void RefreshDisplay()
         {
-            if (string.IsNullOrWhiteSpace(_apiStatus))
-            {
-                _text.text = _baseInfo;
-                return;
-            }
+            var requestBody = string.IsNullOrWhiteSpace(_lastRequestBody) ? "<empty>" : _lastRequestBody;
+            var responseBody = string.IsNullOrWhiteSpace(_lastResponseBody) ? "<empty>" : _lastResponseBody;
 
-            _text.text = _baseInfo + "\n\nAPI test:\n" + _apiStatus;
-        }
+            var header = "Telegram Mini App (Unity WebGL)";
+            if (!string.IsNullOrWhiteSpace(_statusLine))
+                header += "\n" + _statusLine;
 
-        private void AppendApiStatus(string line)
-        {
-            _apiStatus = string.IsNullOrWhiteSpace(_apiStatus) ? line : _apiStatus + "\n" + line;
-            RefreshDisplay();
+            _text.text =
+                header +
+                "\n\nRequest:\n" + requestBody +
+                "\n\nResponse:\n" + responseBody;
         }
 
         private void OnRegisterClicked()
@@ -139,25 +110,30 @@ namespace TelegramMiniApp
         {
             if (_apiRequestInFlight)
             {
-                AppendApiStatus("API request already running...");
+                _lastResponseBody = "API request already running.";
+                RefreshDisplay();
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(_userDataJson))
             {
-                AppendApiStatus("Telegram payload is empty.");
+                _lastRequestBody = "<not built>";
+                _lastResponseBody = "Telegram payload is empty.";
+                RefreshDisplay();
                 return;
             }
 
             var apiBase = ApiBaseUrl;
             if (string.IsNullOrWhiteSpace(apiBase))
             {
-                AppendApiStatus("API base URL is not configured.");
+                _lastRequestBody = "<not built>";
+                _lastResponseBody = "API base URL is not configured.";
+                RefreshDisplay();
                 return;
             }
 
             _apiRequestInFlight = true;
-            AppendApiStatus($"Base URL: {apiBase}");
+            _statusLine = "Sending request...";
             StartCoroutine(RunTelegramAuthRequest(apiBase, isLogin));
         }
 
@@ -169,23 +145,33 @@ namespace TelegramMiniApp
             {
                 if (!TelegramAuthRequestBuilder.TryBuildRegisterRequest(_userDataJson, out var registerRequest))
                 {
-                    AppendApiStatus("Register: failed to build request.");
+                    _lastRequestBody = "<failed to build>";
+                    _lastResponseBody = "Register: failed to build request.";
+                    _statusLine = "Register: build failed.";
+                    RefreshDisplay();
                     _apiRequestInFlight = false;
                     yield break;
                 }
 
-                AppendApiStatus("Register: start");
+                _lastRequestBody = JsonUtility.ToJson(registerRequest, true);
+                _lastResponseBody = "Waiting for response...";
+                _statusLine = "Register: sending...";
+                RefreshDisplay();
                 TelegramAuthRegisterResponse registerResponse = null;
                 ApiError registerError = null;
                 yield return client.Register(registerRequest, r => registerResponse = r, e => registerError = e);
                 if (registerError != null)
                 {
-                    AppendApiStatus("Register: error - " + registerError.ToSummary());
+                    _lastResponseBody = FormatResponseBody(registerError.rawBody, registerError.ToSummary());
+                    _statusLine = "Register: error.";
+                    RefreshDisplay();
                     _apiRequestInFlight = false;
                     yield break;
                 }
 
-                AppendApiStatus("Register: ok");
+                _lastResponseBody = JsonUtility.ToJson(registerResponse, true);
+                _statusLine = "Register: ok.";
+                RefreshDisplay();
                 _apiRequestInFlight = false;
                 yield break;
             }
@@ -193,27 +179,46 @@ namespace TelegramMiniApp
             var loginRequest = TelegramAuthRequestBuilder.BuildLoginRequest(_userDataJson);
             if (loginRequest == null)
             {
-                AppendApiStatus("Login: failed to build request.");
+                _lastRequestBody = "<failed to build>";
+                _lastResponseBody = "Login: failed to build request.";
+                _statusLine = "Login: build failed.";
+                RefreshDisplay();
                 _apiRequestInFlight = false;
                 yield break;
             }
 
-            AppendApiStatus("Login: start");
+            _lastRequestBody = JsonUtility.ToJson(loginRequest, true);
+            _lastResponseBody = "Waiting for response...";
+            _statusLine = "Login: sending...";
+            RefreshDisplay();
             TelegramAuthLoginResponse loginResponse = null;
             ApiError loginError = null;
             yield return client.Login(loginRequest, r => loginResponse = r, e => loginError = e);
             if (loginError != null)
             {
-                AppendApiStatus("Login: error - " + loginError.ToSummary());
+                _lastResponseBody = FormatResponseBody(loginError.rawBody, loginError.ToSummary());
+                _statusLine = "Login: error.";
+                RefreshDisplay();
                 _apiRequestInFlight = false;
                 yield break;
             }
 
-            var tokenPreview = string.IsNullOrEmpty(loginResponse?.accessToken)
-                ? "<empty>"
-                : (loginResponse.accessToken.Length > 16 ? loginResponse.accessToken.Substring(0, 16) + "..." : loginResponse.accessToken);
-            AppendApiStatus("Login: ok. Token: " + tokenPreview);
+            _lastResponseBody = JsonUtility.ToJson(loginResponse, true);
+            _statusLine = "Login: ok.";
+            RefreshDisplay();
             _apiRequestInFlight = false;
+        }
+
+        private static string FormatResponseBody(string rawBody, string fallback)
+        {
+            if (string.IsNullOrWhiteSpace(rawBody))
+                return string.IsNullOrWhiteSpace(fallback) ? "<empty>" : fallback;
+
+            var trimmed = rawBody.Trim();
+            if (trimmed.StartsWith("{") || trimmed.StartsWith("["))
+                return PrettyPrintJson(trimmed);
+
+            return rawBody;
         }
 
         private static string PrettyPrintJson(string json)
