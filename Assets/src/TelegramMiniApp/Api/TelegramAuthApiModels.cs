@@ -11,6 +11,7 @@ namespace TelegramMiniApp.Api
         public string appVersion;
         public string manufacturer;
         public string model;
+        public string userAgent;
         public string androidVersion;
         public string sdkVersion;
         public string performanceClass;

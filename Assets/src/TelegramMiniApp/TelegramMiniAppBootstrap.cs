@@ -26,6 +26,28 @@ namespace TelegramMiniApp
         private bool _apiRequestInFlight;
 
         private const string ApiBaseUrl = "http://194.147.90.24";
+        private const bool UseMockRequests = true;
+        private const string MockRequestJson = @"{
+  ""telegramSessionDto"": {
+    ""id"": 123,
+    ""firstName"": ""Q"",
+    ""lastName"": ""Q"",
+    ""username"": ""Qwer"",
+    ""photoUrl"": """",
+    ""authDate"": 1766075734,
+    ""hash"": ""3711fae69a23a5a879a45e0d8a7febdfdf91bab8962aa4b396cee3f17fe87a65""
+  },
+  ""connectionData"": {
+    ""connectionType"": ""TelegramMiniAppConnectionData"",
+    ""appVersion"": ""1"",
+    ""manufacturer"": ""1"",
+    ""model"": ""1"",
+    ""userAgent"": ""1"",
+    ""sdkVersion"": ""1"",
+    ""androidVersion"": ""1"",
+    ""performanceClass"": ""1""
+  }
+}";
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Create()
@@ -48,11 +70,16 @@ namespace TelegramMiniApp
             EnsureEventSystem();
             _text = CreateOverlayText();
             
-            _statusLine = "Waiting for Telegram.WebApp...";
+            _statusLine = UseMockRequests
+                ? "Mock data enabled."
+                : "Waiting for Telegram.WebApp...";
             RefreshDisplay();
 
-            TelegramWebApp.RequestUserDataJson();
-            TelegramWebApp.RequestUserAgent();
+            if (!UseMockRequests)
+            {
+                TelegramWebApp.RequestUserDataJson();
+                TelegramWebApp.RequestUserAgent();
+            }
         }
 
         private void OnDestroy()
@@ -65,6 +92,9 @@ namespace TelegramMiniApp
 
         private void Update()
         {
+            if (UseMockRequests)
+                return;
+
             if (_received)
                 return;
 
@@ -82,9 +112,12 @@ namespace TelegramMiniApp
         private void HandleUserDataJson(string json)
         {
             _received = true;
-            _userDataJson = json;
-            _statusLine = "Telegram.WebApp ready.";
-            RefreshDisplay();
+            _userDataJson = json ?? "";
+            if (!UseMockRequests)
+            {
+                _statusLine = "Telegram.WebApp ready.";
+                RefreshDisplay();
+            }
         }
 
         private void HandleUserAgent(string userAgent)
@@ -126,7 +159,7 @@ namespace TelegramMiniApp
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(_userDataJson))
+            if (!UseMockRequests && string.IsNullOrWhiteSpace(_userDataJson))
             {
                 _lastRequestBody = "<not built>";
                 _lastResponseBody = "Telegram payload is empty.";
@@ -145,16 +178,30 @@ namespace TelegramMiniApp
 
             _apiRequestInFlight = true;
             _statusLine = "Sending request...";
-            StartCoroutine(RunTelegramAuthRequest(apiBase, isLogin));
+            StartCoroutine(RunTelegramAuthRequest(apiBase, isLogin, UseMockRequests));
         }
 
-        private System.Collections.IEnumerator RunTelegramAuthRequest(string apiBase, bool isLogin)
+        private System.Collections.IEnumerator RunTelegramAuthRequest(string apiBase, bool isLogin, bool useMock)
         {
             var client = new TelegramAuthApiClient(apiBase);
 
             if (!isLogin)
             {
-                if (!TelegramAuthRequestBuilder.TryBuildRegisterRequest(_userDataJson, _userAgent, out var registerRequest))
+                TelegramAuthRegisterRequest registerRequest;
+                if (useMock)
+                {
+                    if (!TryBuildMockRegisterRequest(out registerRequest))
+                    {
+                        _lastRequestBody = "<failed to build>";
+                        _lastResponseBody = "Register: failed to build mock request.";
+                        _statusLine = "Register: build failed.";
+                        RefreshDisplay();
+                        _apiRequestInFlight = false;
+                        yield break;
+                    }
+                    _lastRequestBody = PrettyPrintJson(MockRequestJson);
+                }
+                else if (!TelegramAuthRequestBuilder.TryBuildRegisterRequest(_userDataJson, _userAgent, out registerRequest))
                 {
                     _lastRequestBody = "<failed to build>";
                     _lastResponseBody = "Register: failed to build request.";
@@ -163,8 +210,11 @@ namespace TelegramMiniApp
                     _apiRequestInFlight = false;
                     yield break;
                 }
+                else
+                {
+                    _lastRequestBody = JsonUtility.ToJson(registerRequest, true);
+                }
 
-                _lastRequestBody = JsonUtility.ToJson(registerRequest, true);
                 _lastResponseBody = "Waiting for response...";
                 _statusLine = "Register: sending...";
                 RefreshDisplay();
@@ -192,7 +242,21 @@ namespace TelegramMiniApp
                 yield break;
             }
 
-            if (!TelegramAuthRequestBuilder.TryBuildLoginRequest(_userDataJson, _userAgent, out var loginRequest))
+            TelegramAuthLoginRequest loginRequest;
+            if (useMock)
+            {
+                if (!TryBuildMockLoginRequest(out loginRequest))
+                {
+                    _lastRequestBody = "<failed to build>";
+                    _lastResponseBody = "Login: failed to build mock request.";
+                    _statusLine = "Login: build failed.";
+                    RefreshDisplay();
+                    _apiRequestInFlight = false;
+                    yield break;
+                }
+                _lastRequestBody = PrettyPrintJson(MockRequestJson);
+            }
+            else if (!TelegramAuthRequestBuilder.TryBuildLoginRequest(_userDataJson, _userAgent, out loginRequest))
             {
                 _lastRequestBody = "<failed to build>";
                 _lastResponseBody = "Login: failed to build request.";
@@ -201,8 +265,11 @@ namespace TelegramMiniApp
                 _apiRequestInFlight = false;
                 yield break;
             }
+            else
+            {
+                _lastRequestBody = JsonUtility.ToJson(loginRequest, true);
+            }
 
-            _lastRequestBody = JsonUtility.ToJson(loginRequest, true);
             _lastResponseBody = "Waiting for response...";
             _statusLine = "Login: sending...";
             RefreshDisplay();
@@ -227,6 +294,18 @@ namespace TelegramMiniApp
             _statusLine = "Login: ok.";
             RefreshDisplay();
             _apiRequestInFlight = false;
+        }
+
+        private static bool TryBuildMockRegisterRequest(out TelegramAuthRegisterRequest request)
+        {
+            request = JsonUtility.FromJson<TelegramAuthRegisterRequest>(MockRequestJson);
+            return request != null && request.telegramSessionDto != null;
+        }
+
+        private static bool TryBuildMockLoginRequest(out TelegramAuthLoginRequest request)
+        {
+            request = JsonUtility.FromJson<TelegramAuthLoginRequest>(MockRequestJson);
+            return request != null && request.telegramSessionDto != null;
         }
 
         private static string FormatSuccessBody(string rawBody, object parsed)

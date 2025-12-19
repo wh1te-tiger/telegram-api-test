@@ -72,7 +72,8 @@ namespace TelegramMiniApp.Api
         {
             var data = new ConnectionData
             {
-                connectionType = connectionType ?? string.Empty
+                connectionType = connectionType ?? string.Empty,
+                userAgent = userAgent ?? string.Empty
             };
 
             if (string.IsNullOrWhiteSpace(userAgent))
