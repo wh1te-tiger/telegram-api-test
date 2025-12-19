@@ -8,6 +8,12 @@ namespace TelegramMiniApp.Api
     public class ConnectionData
     {
         public string connectionType;
+        public string appVersion;
+        public string manufacturer;
+        public string model;
+        public string androidVersion;
+        public string sdkVersion;
+        public string performanceClass;
     }
 
     [Serializable]

@@ -17,6 +17,7 @@ namespace TelegramMiniApp
         private float _timeSinceStart;
         private bool _received;
         private string _userDataJson;
+        private string _userAgent;
         private string _statusLine;
         private string _lastRequestBody;
         private string _lastResponseBody;
@@ -42,6 +43,7 @@ namespace TelegramMiniApp
         {
             _bridge = new GameObject(TelegramWebApp.BridgeGameObjectName).AddComponent<TelegramMiniAppBridge>();
             _bridge.UserDataJsonReceived += HandleUserDataJson;
+            _bridge.UserAgentReceived += HandleUserAgent;
 
             EnsureEventSystem();
             _text = CreateOverlayText();
@@ -49,12 +51,15 @@ namespace TelegramMiniApp
             RefreshDisplay();
 
             TelegramWebApp.RequestUserDataJson();
+            TelegramWebApp.RequestUserAgent();
         }
 
         private void OnDestroy()
         {
             if (_bridge != null)
                 _bridge.UserDataJsonReceived -= HandleUserDataJson;
+            if (_bridge != null)
+                _bridge.UserAgentReceived -= HandleUserAgent;
         }
 
         private void Update()
@@ -79,6 +84,11 @@ namespace TelegramMiniApp
             _userDataJson = json ?? "";
             _statusLine = "Telegram.WebApp ready.";
             RefreshDisplay();
+        }
+
+        private void HandleUserAgent(string userAgent)
+        {
+            _userAgent = userAgent ?? "";
         }
 
         private void RefreshDisplay()
@@ -143,7 +153,7 @@ namespace TelegramMiniApp
 
             if (!isLogin)
             {
-                if (!TelegramAuthRequestBuilder.TryBuildRegisterRequest(_userDataJson, out var registerRequest))
+                if (!TelegramAuthRequestBuilder.TryBuildRegisterRequest(_userDataJson, _userAgent, out var registerRequest))
                 {
                     _lastRequestBody = "<failed to build>";
                     _lastResponseBody = "Register: failed to build request.";
@@ -181,7 +191,7 @@ namespace TelegramMiniApp
                 yield break;
             }
 
-            var loginRequest = TelegramAuthRequestBuilder.BuildLoginRequest(_userDataJson);
+            var loginRequest = TelegramAuthRequestBuilder.BuildLoginRequest(_userDataJson, _userAgent);
             if (loginRequest == null)
             {
                 _lastRequestBody = "<failed to build>";
