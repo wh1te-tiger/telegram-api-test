@@ -25,7 +25,7 @@ namespace TelegramMiniApp
         private Button _loginButton;
         private bool _apiRequestInFlight;
 
-        private const string ApiBaseUrl = "https://194.147.90.24";
+        private const string ApiBaseUrl = "http://194.147.90.24";
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Create()
@@ -47,6 +47,7 @@ namespace TelegramMiniApp
 
             EnsureEventSystem();
             _text = CreateOverlayText();
+            
             _statusLine = "Waiting for Telegram.WebApp...";
             RefreshDisplay();
 
@@ -81,7 +82,7 @@ namespace TelegramMiniApp
         private void HandleUserDataJson(string json)
         {
             _received = true;
-            _userDataJson = json ?? "";
+            _userDataJson = json;
             _statusLine = "Telegram.WebApp ready.";
             RefreshDisplay();
         }
